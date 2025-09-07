@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Ops MVP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .modal-backdrop {
+            background-color: rgba(0,0,0,0.5);
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        .nav-item.active svg, .nav-item.active span {
+            color: #2563eb; /* blue-600 */
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .sub-tab-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .sub-tab-button.active {
+            border-color: #2563eb;
+            color: #2563eb;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 antialiased">
+
+    <!-- Main Application Container -->
+    <div id="app" class="max-w-md mx-auto bg-white shadow-lg h-screen flex flex-col">
+
+        <!-- Header -->
+        <header id="app-header" class="bg-white p-4 border-b border-gray-200 shadow-sm sticky top-0 z-20">
+            <h1 class="text-xl font-bold text-gray-800 text-center">Trader Dashboard</h1>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="app-content" class="flex-grow p-4 overflow-y-auto pb-24">
+            <!-- Content will be rendered here by JavaScript -->
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 flex justify-around p-2 z-20">
+            <button class="nav-item flex flex-col items-center justify-center text-gray-500 w-full" data-page="dashboard">
+                <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+                <span class="text-xs mt-1">Dashboard</span>
+            </button>
+            <button class="nav-item flex flex-col items-center justify-center text-gray-500 w-full" data-page="pendingPOs">
+                <i data-lucide="file-stack" class="w-6 h-6"></i>
+                <span class="text-xs mt-1">Purchase Orders</span>
+            </button>
+             <button class="nav-item flex flex-col items-center justify-center text-gray-500 w-full" data-page="vehicleStatus">
+                <i data-lucide="truck" class="w-6 h-6"></i>
+                <span class="text-xs mt-1">Vehicle Status</span>
+            </button>
+            <button class="nav-item flex flex-col items-center justify-center text-gray-500 w-full" data-page="balances">
+                <i data-lucide="landmark" class="w-6 h-6"></i>
+                <span class="text-xs mt-1">Balances</span>
+            </button>
+            <button class="nav-item flex flex-col items-center justify-center text-gray-500 w-full" data-page="profile">
+                <i data-lucide="user" class="w-6 h-6"></i>
+                <span class="text-xs mt-1">Profile</span>
+            </button>
+        </nav>
+
+        <!-- Modal Container -->
+        <div id="modal-container" class="hidden"></div>
+        
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- STATE MANAGEMENT ---
+        const state = {
+            currentPage: 'dashboard',
+            activeVehicleStatusTab: 'inTransit', // inTransit, qualityPending, bardanaPending
+            activePOStatusTab: 'pending', // pending, completed
+            userProfile: {
+                businessName: 'Agro Traders Inc.',
+                gst: '22ABCDE1234F1Z5',
+                mobile: '9876543210',
+                address: '123 Commodity Market, New Delhi, India'
+            },
+            financiers: [
+                { id: 'fin1', businessName: 'Capital Finance Ltd.', gst: '27FGHIJ5678K1Z9', mobile: '9988776655', billingAddress: '45 Finance Hub, Mumbai' },
+                { id: 'fin2', businessName: 'Growth Capital', gst: '29LMNOP9012Q1Z3', mobile: '9123456789', billingAddress: '78 Tech Park, Bangalore' }
+            ],
+            plants: [
+                { id: 'plant1', name: 'Sunrise Foods Plant', gst: '07QRSTU3456V1Z7', mobile: '8765432109', address: 'Plot 42, Industrial Area, Ghaziabad' },
+                { id: 'plant2', name: 'GreenField Agro Unit', gst: '06WXYZA7890B1Z1', mobile: '8899001122', address: 'Khasra No. 110, Alwar, Rajasthan' }
+            ],
+            purchaseOrders: [
+                {
+                    id: 'po101',
+                    financierId: 'fin1',
+                    plantId: 'plant1',
+                    item: 'Wheat',
+                    totalQuantity: 100,
+                    dispatchedQuantity: 50,
+                    rate: 20000,
+                    date: '2025-08-20',
+                    deadline: '2025-09-15',
+                    status: 'Partially Dispatched'
+                },
+                {
+                    id: 'po102',
+                    financierId: 'fin2',
+                    plantId: 'plant2',
+                    item: 'Soybean',
+                    totalQuantity: 50,
+                    dispatchedQuantity: 0,
+                    rate: 45000,
+                    date: '2025-09-01',
+                    deadline: '2025-09-30',
+                    status: 'Pending'
+                }
+            ],
+            vehicles: [
+                {
+                    id: 'veh001', poId: 'po101', vehicleNumber: 'DL1A A1234', quantity: 25, invoiceNumber: 'INV-101-1', challanNumber: 'CH-101-1', ewayBill: 'EWB-101-1', status: 'In Transit', grn: null, financierInvoiceNumber: null, podFile: null, remarks: null,
+                    deductions: { shortage: null, shortageValue: null, bardana: null, quality: null, total: null }, finalAmount: null
+                },
+                {
+                    id: 'veh002', poId: 'po101', vehicleNumber: 'HR2B B5678', quantity: 25, invoiceNumber: 'INV-101-2', challanNumber: 'CH-101-2', ewayBill: 'EWB-101-2', status: 'GRN Incomplete', grn: 'GRN789', financierInvoiceNumber: 'FINV987', podFile: 'pod_hr2b.pdf', remarks: null,
+                    deductions: { shortage: 50, shortageValue: 1000, bardana: null, quality: null, total: 1000 }, finalAmount: null
+                },
+            ],
+            ledgers: {
+                fin1: [
+                    { type: 'debit', date: '2025-08-22', description: 'INV-101-1 (Vehicle DL1A A1234)', amount: 500000, balance: 500000 },
+                    { type: 'debit', date: '2025-08-23', description: 'INV-101-2 (Vehicle HR2B B5678)', amount: 500000, balance: 1000000 },
+                    { type: 'credit', date: '2025-08-25', description: 'Credit Note for Deductions (GRN: GRN789)', amount: 1000, balance: 999000 },
+                ],
+                fin2: []
+            }
+        };
+
+        // --- DOM ELEMENTS ---
+        const appContent = document.getElementById('app-content');
+        const appHeader = document.getElementById('app-header').querySelector('h1');
+        const navItems = document.querySelectorAll('.nav-item');
+        const modalContainer = document.getElementById('modal-container');
+        
+        // --- UTILITY FUNCTIONS ---
+        const getFinancier = (id) => state.financiers.find(f => f.id === id);
+        const getPlant = (id) => state.plants.find(p => p.id === id);
+        const getPO = (id) => state.purchaseOrders.find(po => po.id === id);
+
+        // --- TEMPLATES & RENDERING ---
+        
+        function render() {
+            appContent.innerHTML = `<div class="flex justify-center items-center h-full"><div class="loader"></div></div>`;
+            setTimeout(() => {
+                switch (state.currentPage) {
+                    case 'dashboard': renderDashboard(); break;
+                    case 'pendingPOs': renderPendingPOs(); break;
+                    case 'poDetails': renderPODetails(window.history.state?.poId); break;
+                    case 'vehicleStatus': renderVehicleStatus(); break;
+                    case 'balances': renderBalances(); break;
+                    case 'profile': renderProfile(); break;
+                    default: renderDashboard();
+                }
+                lucide.createIcons();
+            }, 100);
+            updateNav();
+        }
+
+        function updateNav() {
+            navItems.forEach(item => {
+                const page = item.getAttribute('data-page');
+                if (page === state.currentPage || (state.currentPage === 'poDetails' && page === 'pendingPOs')) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+        
+        // --- PAGE RENDERING FUNCTIONS ---
+
+        function renderDashboard() {
+            appHeader.textContent = 'Dashboard';
+            const pendingPOs = state.purchaseOrders.filter(po => po.status !== 'Completed' && po.status !== 'Cancelled').length;
+            const inTransitVehicles = state.vehicles.filter(v => v.status === 'In Transit').length;
+            const totalReceivableAmount = Object.values(state.ledgers).reduce((acc, ledger) => {
+                if (ledger.length > 0) return acc + ledger[ledger.length - 1].balance;
+                return acc;
+            }, 0);
+
+            appContent.innerHTML = `
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <button class="nav-item-action bg-blue-100 text-blue-800 p-4 rounded-lg shadow text-left w-full" data-page="pendingPOs">
+                            <i data-lucide="file-stack" class="w-8 h-8 mb-2"></i>
+                            <div class="text-2xl font-bold">${pendingPOs}</div>
+                            <div class="text-sm">Pending POs</div>
+                        </button>
+                        <button class="nav-item-action bg-orange-100 text-orange-800 p-4 rounded-lg shadow text-left w-full" data-page="vehicleStatus">
+                             <i data-lucide="truck" class="w-8 h-8 mb-2"></i>
+                            <div class="text-2xl font-bold">${inTransitVehicles}</div>
+                            <div class="text-sm">Vehicles In-Transit</div>
+                        </button>
+                    </div>
+                    <button class="nav-item-action bg-green-100 text-green-800 p-4 rounded-lg shadow text-left w-full" data-page="balances">
+                        <i data-lucide="indian-rupee" class="w-8 h-8 mb-2"></i>
+                        <div class="text-2xl font-bold">₹${totalReceivableAmount.toLocaleString('en-IN')}</div>
+                        <div class="text-sm">Total Receivables</div>
+                    </button>
+                    
+                    <div class="pt-6">
+                        <h2 class="text-lg font-semibold text-gray-700 mb-2">Quick Actions</h2>
+                        <div class="grid grid-cols-1 gap-4">
+                              <button id="createPOBtn" class="bg-blue-600 text-white p-4 rounded-lg shadow-md flex items-center justify-center space-x-2">
+                                <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                                <span>Create New PO</span>
+                              </button>
+                         </div>
+                    </div>
+                </div>`;
+            document.getElementById('createPOBtn').addEventListener('click', showCreatePOModal);
+            document.querySelectorAll('.nav-item-action').forEach(btn => {
+                btn.addEventListener('click', (e) => navigate(e.currentTarget.dataset.page));
+            });
+        }
+        
+        function renderPendingPOs() {
+            appHeader.textContent = 'Purchase Orders';
+            const { activePOStatusTab } = state;
+
+            const tabs = [
+                { id: 'pending', label: 'Pending' },
+                { id: 'completed', label: 'Completed' },
+            ];
+
+            const posToDisplay = activePOStatusTab === 'pending'
+                ? state.purchaseOrders.filter(po => po.status !== 'Completed' && po.status !== 'Cancelled')
+                : state.purchaseOrders.filter(po => po.status === 'Completed' || po.status === 'Cancelled');
+
+            let content = posToDisplay.length > 0 ? posToDisplay.map(po => {
+                const financier = getFinancier(po.financierId);
+                const progress = (po.dispatchedQuantity / po.totalQuantity) * 100;
+                let statusClass = 'bg-yellow-100 text-yellow-800';
+                if (po.status === 'Pending') statusClass = 'bg-red-100 text-red-800';
+                if (po.status === 'Completed') statusClass = 'bg-green-100 text-green-800';
+                if (po.status === 'Cancelled') statusClass = 'bg-gray-100 text-gray-800';
+
+                return `
+                    <div class="bg-white p-4 rounded-lg shadow border border-gray-200 mb-4 cursor-pointer" data-po-id="${po.id}">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-bold text-gray-800">${po.item}</p>
+                                <p class="text-sm text-gray-500">${financier.businessName}</p>
+                            </div>
+                            <span class="text-xs font-semibold ${statusClass} px-2 py-1 rounded-full">${po.status}</span>
+                        </div>
+                        <div class="mt-4">
+                            <div class="flex justify-between text-sm text-gray-600 mb-1">
+                                <span>Dispatched</span>
+                                <span>${po.dispatchedQuantity} / ${po.totalQuantity} MT</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5"><div class="bg-blue-600 h-2.5 rounded-full" style="width: ${progress}%"></div></div>
+                        </div>
+                    </div>`;
+            }).join('') : `<p class="text-center text-gray-500 mt-8">No purchase orders in this category.</p>`;
+            
+            appContent.innerHTML = `
+                <div class="mb-4">
+                    <div class="flex border-b">
+                        ${tabs.map(tab => `<button class="sub-tab-button flex-1 py-2 text-sm font-medium border-b-2 ${activePOStatusTab === tab.id ? 'active' : 'border-transparent text-gray-500'}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+                    </div>
+                </div>
+                ${content}
+                <button id="createPOBtn" class="fixed bottom-20 right-5 bg-blue-600 text-white rounded-full p-4 shadow-lg z-10"><i data-lucide="plus"></i></button>`;
+
+            document.querySelectorAll('.sub-tab-button').forEach(btn => btn.addEventListener('click', e => {
+                state.activePOStatusTab = e.currentTarget.dataset.tab;
+                render();
+            }));
+
+            document.querySelectorAll('[data-po-id]').forEach(card => card.addEventListener('click', (e) => {
+                const poId = e.currentTarget.dataset.poId;
+                window.history.pushState({ poId }, '', `#po/${poId}`);
+                navigate('poDetails');
+            }));
+            document.getElementById('createPOBtn').addEventListener('click', showCreatePOModal);
+        }
+
+        function renderPODetails(poId) {
+            const po = getPO(poId);
+            if (!po) {
+                appContent.innerHTML = `<p class="text-center text-red-500">PO not found.</p>`;
+                appHeader.textContent = 'Error';
+                return;
+            }
+
+            const financier = getFinancier(po.financierId);
+            const plant = getPlant(po.plantId);
+            const vehiclesForPO = state.vehicles.filter(v => v.poId === poId);
+            appHeader.textContent = `PO: ${po.item} (${po.id})`;
+
+            const vehicleList = vehiclesForPO.length > 0 ? vehiclesForPO.map(v => `
+                <div class="bg-gray-50 p-3 rounded-lg border flex justify-between items-center">
+                    <div>
+                        <p class="font-semibold">${v.vehicleNumber}</p>
+                        <p class="text-sm text-gray-500">${v.quantity} MT - ${v.status}</p>
+                    </div>
+                    <button class="text-blue-600 text-sm font-medium view-vehicle-details-btn" data-vehicle-id="${v.id}">View Details</button>
+                </div>`).join('') : '<p class="text-sm text-gray-500 text-center py-4">No vehicles dispatched yet.</p>';
+
+            const actionButtons = po.status !== 'Completed' && po.status !== 'Cancelled' ? `
+                <button id="addVehicleBtn" class="bg-blue-600 text-white w-full py-2.5 rounded-lg mt-4 text-sm font-semibold flex items-center justify-center space-x-2">
+                    <i data-lucide="plus" class="w-5 h-5"></i><span>Dispatch New Vehicle</span>
+                </button>
+                <button id="squareOffPOBtn" class="bg-red-100 text-red-700 w-full py-2.5 rounded-lg mt-2 text-sm font-semibold flex items-center justify-center space-x-2">
+                    <i data-lucide="scissors" class="w-5 h-5"></i><span>Square Off / Close PO</span>
+                </button>
+            ` : `<p class="text-center text-gray-500 mt-4 font-semibold text-green-700">This Purchase Order is Completed.</p>`;
+
+            appContent.innerHTML = `
+                <div class="space-y-6">
+                    <div>
+                        <button id="backToPOs" class="text-blue-600 text-sm font-medium flex items-center mb-4"><i data-lucide="arrow-left" class="w-4 h-4 mr-1"></i> Back to POs</button>
+                        <div class="bg-white p-4 rounded-lg shadow border">
+                            <h2 class="text-lg font-bold">${po.item}</h2><p class="text-sm text-gray-500">For ${financier.businessName}</p>
+                            <div class="mt-4 grid grid-cols-2 gap-4 text-sm">
+                                <div><p class="text-gray-500">Total Qty</p><p class="font-semibold">${po.totalQuantity} MT</p></div>
+                                <div><p class="text-gray-500">Rate</p><p class="font-semibold">₹${po.rate.toLocaleString('en-IN')}/MT</p></div>
+                                <div><p class="text-gray-500">Ship To</p><p class="font-semibold">${plant.name}</p></div>
+                                <div><p class="text-gray-500">Deadline</p><p class="font-semibold">${po.deadline}</p></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-md font-semibold text-gray-700 mb-2">Dispatched Vehicles</h3>
+                        <div class="space-y-2">${vehicleList}</div>
+                        ${actionButtons}
+                    </div>
+                </div>`;
+            
+            document.getElementById('backToPOs').addEventListener('click', () => { window.history.back(); navigate('pendingPOs'); });
+            if (po.status !== 'Completed' && po.status !== 'Cancelled') {
+                document.getElementById('addVehicleBtn').addEventListener('click', () => showAddVehicleModal(poId));
+                document.getElementById('squareOffPOBtn').addEventListener('click', () => showSquareOffPOModal(poId));
+            }
+            document.querySelectorAll('.view-vehicle-details-btn').forEach(btn => btn.addEventListener('click', e => showVehicleDetailsModal(e.currentTarget.dataset.vehicleId)));
+        }
+        
+        function renderVehicleStatus() {
+            appHeader.textContent = 'Vehicle Status';
+            const { activeVehicleStatusTab } = state;
+
+            const tabs = [
+                { id: 'inTransit', label: 'In Transit' },
+                { id: 'qualityPending', label: 'Quality Pending' },
+                { id: 'bardanaPending', label: 'Bardana Pending' },
+            ];
+            
+            let vehiclesToDisplay;
+            if (activeVehicleStatusTab === 'inTransit') {
+                vehiclesToDisplay = state.vehicles.filter(v => v.status === 'In Transit');
+            } else if (activeVehicleStatusTab === 'qualityPending') {
+                vehiclesToDisplay = state.vehicles.filter(v => v.status === 'GRN Incomplete' && v.deductions.quality === null);
+            } else { // bardanaPending
+                vehiclesToDisplay = state.vehicles.filter(v => v.status === 'GRN Incomplete' && v.deductions.bardana === null);
+            }
+
+            const vehicleListContent = vehiclesToDisplay.length > 0 ? vehiclesToDisplay.map(v => {
+                const po = getPO(v.poId);
+                const financier = getFinancier(po.financierId);
+                let actionButton;
+                if (v.status === 'In Transit') {
+                    actionButton = `<button class="record-grn-btn bg-green-500 text-white w-full py-2 rounded-lg mt-4 text-sm font-semibold" data-vehicle-id="${v.id}">Record GRN</button>`;
+                } else {
+                    actionButton = `<button class="add-pending-deductions-btn bg-yellow-500 text-white w-full py-2 rounded-lg mt-4 text-sm font-semibold" data-vehicle-id="${v.id}">Add Deductions</button>`;
+                }
+
+                return `
+                    <div class="bg-white p-4 rounded-lg shadow border mb-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-bold text-gray-800">${v.vehicleNumber}</p>
+                                <p class="text-sm text-gray-500">${po.item} for ${financier.businessName}</p>
+                            </div>
+                            <p class="text-sm text-gray-600">${v.quantity} MT</p>
+                        </div>
+                        <div class="flex space-x-2 mt-2">
+                           ${actionButton}
+                           <button class="view-vehicle-details-btn border border-gray-300 w-full py-2 rounded-lg mt-4 text-sm font-semibold" data-vehicle-id="${v.id}">View Details</button>
+                        </div>
+                    </div>`;
+            }).join('') : `<p class="text-center text-gray-500 mt-8">No vehicles in this category.</p>`;
+
+            appContent.innerHTML = `
+                <div class="mb-4">
+                    <div class="flex border-b">
+                        ${tabs.map(tab => `<button class="sub-tab-button flex-1 py-2 text-sm font-medium border-b-2 ${activeVehicleStatusTab === tab.id ? 'active' : 'border-transparent text-gray-500'}" data-tab="${tab.id}">${tab.label}</button>`).join('')}
+                    </div>
+                </div>
+                <div id="vehicle-list">${vehicleListContent}</div>`;
+
+            document.querySelectorAll('.sub-tab-button').forEach(btn => btn.addEventListener('click', e => {
+                state.activeVehicleStatusTab = e.currentTarget.dataset.tab;
+                render();
+            }));
+            document.querySelectorAll('.record-grn-btn').forEach(btn => btn.addEventListener('click', e => showRecordDeductionsModal(e.currentTarget.dataset.vehicleId)));
+            document.querySelectorAll('.add-pending-deductions-btn').forEach(btn => btn.addEventListener('click', e => showAddPendingDeductionsModal(e.currentTarget.dataset.vehicleId)));
+            document.querySelectorAll('.view-vehicle-details-btn').forEach(btn => btn.addEventListener('click', e => showVehicleDetailsModal(e.currentTarget.dataset.vehicleId)));
+        }
+        
+        function renderBalances() {
+            appHeader.textContent = 'Balances';
+            let content = state.financiers.map(fin => {
+                const ledger = state.ledgers[fin.id] || [];
+                const balance = ledger.length > 0 ? ledger[ledger.length - 1].balance : 0;
+                return `
+                     <div class="bg-white p-4 rounded-lg shadow border mb-4">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="font-bold text-gray-800">${fin.businessName}</p>
+                                <p class="text-sm text-gray-500">Receivable: <span class="font-semibold text-green-700">₹${balance.toLocaleString('en-IN')}</span></p>
+                            </div>
+                            <button class="view-ledger-btn text-blue-600 text-sm font-medium" data-financier-id="${fin.id}">View Ledger</button>
+                        </div>
+                     </div>`;
+            }).join('');
+            appContent.innerHTML = content;
+            document.querySelectorAll('.view-ledger-btn').forEach(btn => btn.addEventListener('click', e => showLedgerModal(e.currentTarget.dataset.financierId)));
+        }
+        
+        function renderProfile() {
+            appHeader.textContent = 'Profile & Settings';
+            const user = state.userProfile;
+            const financiersList = state.financiers.map(f => `<li class="border-b py-2">${f.businessName}</li>`).join('');
+            const plantsList = state.plants.map(p => `<li class="border-b py-2">${p.name}</li>`).join('');
+
+            appContent.innerHTML = `
+                <div class="space-y-6">
+                    <div class="bg-white p-4 rounded-lg shadow border"><h2 class="text-lg font-semibold text-gray-800 mb-2">${user.businessName}</h2><p class="text-sm text-gray-600"><strong>GST:</strong> ${user.gst}</p><p class="text-sm text-gray-600"><strong>Mobile:</strong> ${user.mobile}</p><p class="text-sm text-gray-600"><strong>Address:</strong> ${user.address}</p></div>
+                    <div class="bg-white p-4 rounded-lg shadow border"><div class="flex justify-between items-center mb-2"><h2 class="text-lg font-semibold text-gray-800">Financiers</h2><button id="addFinancierBtn" class="text-blue-600 text-sm font-medium">Add New</button></div><ul class="text-sm text-gray-700">${financiersList}</ul></div>
+                    <div class="bg-white p-4 rounded-lg shadow border"><div class="flex justify-between items-center mb-2"><h2 class="text-lg font-semibold text-gray-800">Plants</h2><button id="addPlantBtn" class="text-blue-600 text-sm font-medium">Add New</button></div><ul class="text-sm text-gray-700">${plantsList}</ul></div>
+                </div>`;
+            document.getElementById('addFinancierBtn').addEventListener('click', showAddFinancierModal);
+            document.getElementById('addPlantBtn').addEventListener('click', showAddPlantModal);
+        }
+
+        // --- MODAL FUNCTIONS ---
+        
+        function showModal(content, isForm = true) {
+            const formHtml = isForm ? `<form id="modal-form">${content}</form>` : content;
+            modalContainer.innerHTML = `<div class="modal-backdrop fixed inset-0 z-40 flex items-center justify-center p-4"><div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-md p-6 transform scale-95 overflow-y-auto max-h-full">${formHtml}</div></div>`;
+            modalContainer.classList.remove('hidden');
+            setTimeout(() => {
+                modalContainer.querySelector('.modal-backdrop').classList.add('opacity-100');
+                modalContainer.querySelector('.modal-content').classList.remove('scale-95');
+            }, 10);
+            modalContainer.querySelector('.modal-backdrop').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeModal(); });
+            return modalContainer.querySelector('#modal-form');
+        }
+
+        function closeModal() {
+            const backdrop = modalContainer.querySelector('.modal-backdrop');
+            const content = modalContainer.querySelector('.modal-content');
+            if(backdrop && content) {
+                backdrop.classList.remove('opacity-100');
+                content.classList.add('scale-95');
+                setTimeout(() => { modalContainer.classList.add('hidden'); modalContainer.innerHTML = ''; }, 300);
+            }
+        }
+        
+        function createFormInput(id, label, type = 'text', required = true, value = '') { return `<div class="mb-4"><label for="${id}" class="block text-sm font-medium text-gray-700 mb-1">${label}</label><input type="${type}" id="${id}" name="${id}" value="${value}" ${required ? 'required' : ''} class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></div>`; }
+        function createFormSelect(id, label, options, required = true) { const optionsHtml = options.map(o => `<option value="${o.value}">${o.text}</option>`).join(''); return `<div class="mb-4"><label for="${id}" class="block text-sm font-medium text-gray-700 mb-1">${label}</label><select id="${id}" name="${id}" ${required ? 'required' : ''} class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white">${optionsHtml}</select></div>`;}
+        function createFormButtons() { return `<div class="flex justify-end space-x-2 mt-6"><button type="button" id="closeModalBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md">Cancel</button><button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md">Save</button></div>`; }
+
+        function showCreatePOModal() {
+            const financierOptions = state.financiers.map(f => ({ value: f.id, text: f.businessName }));
+            const plantOptions = state.plants.map(p => ({ value: p.id, text: p.name }));
+            const form = showModal(`<h2 class="text-lg font-bold mb-4">Create New PO</h2>${createFormInput('item', 'Item (e.g., Wheat)')}${createFormInput('totalQuantity', 'Total Quantity (Tons)', 'number')}${createFormInput('rate', 'Rate (per Ton)', 'number')}${createFormSelect('financierId', 'Financier', financierOptions)}${createFormSelect('plantId', 'Plant / Ship To', plantOptions)}${createFormInput('date', 'PO Date', 'date')}${createFormInput('deadline', 'Deadline Date', 'date')}${createFormButtons()}`);
+            form.addEventListener('submit', (e) => { e.preventDefault(); const formData = new FormData(form); const newPO = { id: `po${Date.now()}`, ...Object.fromEntries(formData.entries()), totalQuantity: parseFloat(formData.get('totalQuantity')), rate: parseFloat(formData.get('rate')), dispatchedQuantity: 0, status: 'Pending' }; state.purchaseOrders.push(newPO); closeModal(); render(); });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showAddVehicleModal(poId) {
+            const po = getPO(poId);
+            const form = showModal(`<h2 class="text-lg font-bold mb-4">Add Vehicle to PO for ${po.item}</h2>${createFormInput('vehicleNumber', 'Vehicle Number')}${createFormInput('quantity', 'Quantity (Tons)', 'number')}${createFormButtons()}`);
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(form), newQuantity = parseFloat(formData.get('quantity'));
+                if (po.dispatchedQuantity + newQuantity > po.totalQuantity) {
+                    showModal(`<h2 class="text-lg font-bold text-red-600 mb-4">Input Error</h2><p class="text-gray-700">Dispatched quantity (${po.dispatchedQuantity + newQuantity} MT) cannot exceed the total PO quantity (${po.totalQuantity} MT).</p><div class="flex justify-end mt-6"><button type="button" id="closeModalBtn" class="bg-blue-600 text-white px-4 py-2 rounded-md">OK</button></div>`, false);
+                    document.getElementById('closeModalBtn').addEventListener('click', closeModal); return;
+                }
+                const newVehicle = { id: `veh${Date.now()}`, poId: poId, vehicleNumber: formData.get('vehicleNumber'), quantity: newQuantity, invoiceNumber: `INV-${po.id.slice(-3)}-${state.vehicles.filter(v=>v.poId===poId).length + 1}`, challanNumber: `CH-${po.id.slice(-3)}-${state.vehicles.filter(v=>v.poId===poId).length + 1}`, ewayBill: `EWB-${po.id.slice(-3)}-${state.vehicles.filter(v=>v.poId===poId).length + 1}`, status: 'In Transit', grn: null, financierInvoiceNumber: null, podFile: null, remarks: null, deductions: { shortage: null, shortageValue: null, bardana: null, quality: null, total: null }, finalAmount: null };
+                state.vehicles.push(newVehicle);
+                po.dispatchedQuantity += newQuantity;
+                if (po.dispatchedQuantity >= po.totalQuantity) {
+                    po.status = 'Completed';
+                } else {
+                    po.status = 'Partially Dispatched';
+                }
+                const financier = getFinancier(po.financierId); if (!state.ledgers[financier.id]) state.ledgers[financier.id] = []; const lastBalance = state.ledgers[financier.id].length > 0 ? state.ledgers[financier.id].slice(-1)[0].balance : 0; const invoiceValue = newVehicle.quantity * po.rate; state.ledgers[financier.id].push({ type: 'debit', date: new Date().toISOString().split('T')[0], description: `${newVehicle.invoiceNumber} (Vehicle ${newVehicle.vehicleNumber})`, amount: invoiceValue, balance: lastBalance + invoiceValue });
+                closeModal();
+                showDocumentDownloadModal(newVehicle);
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showDocumentDownloadModal(vehicle) {
+            const content = `<h2 class="text-lg font-bold text-green-600 mb-2">Vehicle Dispatched!</h2><p class="text-gray-700 mb-4">Vehicle ${vehicle.vehicleNumber} has been added. Download documents below.</p><div class="space-y-3"><a href="#" download="invoice-${vehicle.invoiceNumber}.pdf" class="block w-full text-center bg-gray-100 p-3 rounded-lg border hover:bg-gray-200 flex items-center justify-center space-x-2"><i data-lucide="download"></i><span>Invoice (${vehicle.invoiceNumber})</span></a><a href="#" download="challan-${vehicle.challanNumber}.pdf" class="block w-full text-center bg-gray-100 p-3 rounded-lg border hover:bg-gray-200 flex items-center justify-center space-x-2"><i data-lucide="download"></i><span>Challan (${vehicle.challanNumber})</span></a><a href="#" download="ewaybill-${vehicle.ewayBill}.pdf" class="block w-full text-center bg-gray-100 p-3 rounded-lg border hover:bg-gray-200 flex items-center justify-center space-x-2"><i data-lucide="download"></i><span>E-Way Bill (${vehicle.ewayBill})</span></a></div><div class="flex justify-end mt-6"><button type="button" id="closeModalBtn" class="bg-blue-600 text-white px-4 py-2 rounded-md">Done</button></div>`;
+            showModal(content, false);
+            document.getElementById('closeModalBtn').addEventListener('click', () => { closeModal(); render(); });
+            lucide.createIcons();
+        }
+        
+        function showVehicleDetailsModal(vehicleId) {
+            const vehicle = state.vehicles.find(v => v.id === vehicleId);
+            const po = getPO(vehicle.poId);
+            const financier = getFinancier(po.financierId);
+            const plant = getPlant(po.plantId);
+
+            const documentDownloads = `
+                <div class="mt-4 pt-4 border-t grid grid-cols-2 gap-2 text-sm">
+                    <a href="#" download="invoice-${vehicle.invoiceNumber}.pdf" class="bg-gray-100 p-2 rounded-md text-center">Download Invoice</a>
+                    <a href="#" download="challan-${vehicle.challanNumber}.pdf" class="bg-gray-100 p-2 rounded-md text-center">Download Challan</a>
+                    <a href="#" download="ewaybill-${vehicle.ewayBill}.pdf" class="bg-gray-100 p-2 rounded-md text-center">Download E-Way Bill</a>
+                    ${vehicle.podFile ? `<a href="#" download="pod-${vehicle.grn}.pdf" class="bg-gray-100 p-2 rounded-md text-center">Download POD</a>` : ''}
+                </div>
+            `;
+
+            const deductionDetails = vehicle.grn ? `
+                <div class="mt-4 pt-4 border-t">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-md font-semibold text-gray-700">GRN & Deduction Details</h3>
+                        <button id="editGrnBtn" class="text-blue-600 text-xs font-semibold">EDIT</button>
+                    </div>
+                    <p class="text-sm"><strong>GRN Number:</strong> ${vehicle.grn}</p>
+                    <p class="text-sm"><strong>Financier Invoice:</strong> ${vehicle.financierInvoiceNumber || 'N/A'}</p>
+                    <p class="text-sm mt-2"><strong>Shortage:</strong> ${vehicle.deductions.shortage || 0} Kgs (₹${(vehicle.deductions.shortageValue || 0).toLocaleString('en-IN')})</p>
+                    <p class="text-sm"><strong>Quality Deduction:</strong> ${vehicle.deductions.quality === null ? 'Pending' : `₹${vehicle.deductions.quality.toLocaleString('en-IN')}`}</p>
+                    <p class="text-sm"><strong>Bardana Deduction:</strong> ${vehicle.deductions.bardana === null ? 'Pending' : `₹${vehicle.deductions.bardana.toLocaleString('en-IN')}`}</p>
+                    <p class="text-sm font-bold"><strong>Total Deductions:</strong> ₹${(vehicle.deductions.total || 0).toLocaleString('en-IN')}</p>
+                    ${vehicle.remarks ? `<p class="text-sm mt-2 text-red-600"><strong>Remarks:</strong> ${vehicle.remarks}</p>` : ''}
+                </div>
+            ` : `<p class="mt-4 pt-4 border-t text-sm text-gray-500">GRN details not yet recorded.</p>`;
+
+            const content = `
+                <h2 class="text-lg font-bold mb-2">Vehicle Details</h2>
+                <div class="space-y-1 text-sm">
+                    <p><strong>Vehicle No:</strong> ${vehicle.vehicleNumber}</p>
+                    <p><strong>Status:</strong> <span class="font-semibold ${vehicle.status === 'Cancelled' ? 'text-red-600' : 'text-gray-800'}">${vehicle.status}</span></p>
+                    <p><strong>Item:</strong> ${po.item} (${vehicle.quantity} MT)</p>
+                    <p><strong>Financier:</strong> ${financier.businessName}</p>
+                    <p><strong>Ship To:</strong> ${plant.name}</p>
+                    <p><strong>Invoice:</strong> ${vehicle.invoiceNumber}</p>
+                    <p><strong>Challan:</strong> ${vehicle.challanNumber}</p>
+                    <p><strong>E-Way Bill:</strong> ${vehicle.ewayBill}</p>
+                </div>
+                ${documentDownloads}
+                ${deductionDetails}
+                <div class="flex justify-end mt-6">
+                    <button type="button" id="closeModalBtn" class="bg-blue-600 text-white px-4 py-2 rounded-md">Close</button>
+                </div>
+            `;
+            showModal(content, false);
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+            if (vehicle.grn) {
+                document.getElementById('editGrnBtn').addEventListener('click', () => {
+                    closeModal();
+                    showEditGRNDetailsModal(vehicleId);
+                });
+            }
+        }
+
+        function showRecordDeductionsModal(vehicleId) {
+            const vehicle = state.vehicles.find(v => v.id === vehicleId);
+            const po = getPO(vehicle.poId);
+
+            const form = showModal(`
+                <h2 class="text-lg font-bold mb-4">Record GRN for ${vehicle.vehicleNumber}</h2>
+                <p class="text-sm text-gray-600 mb-4">Enter compulsory details to save GRN. Other deductions can be added later.</p>
+                ${createFormInput('grnNumber', 'GRN/POD Number')}
+                ${createFormInput('financierInvoiceNumber', 'Financier Invoice Number')}
+                ${createFormInput('shortage', 'Quantity Shortage (Kgs)', 'number', true, '0')}
+                <div class="mb-4">
+                    <label for="podFile" class="block text-sm font-medium text-gray-700 mb-1">Upload POD File</label>
+                    <input type="file" id="podFile" name="podFile" required class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                </div>
+                <div class="flex justify-between items-center mt-6">
+                    <button type="button" id="cancelVehicleBtn" class="bg-red-600 text-white px-4 py-2 rounded-md text-sm">Cancel Vehicle</button>
+                    <div>
+                        <button type="button" id="closeModalBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md">Cancel</button>
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md ml-2">Save GRN</button>
+                    </div>
+                </div>
+            `);
+            
+            document.getElementById('cancelVehicleBtn').addEventListener('click', () => showCancelVehicleModal(vehicleId));
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const shortageKg = parseFloat(formData.get('shortage') || 0);
+                const shortageValue = (shortageKg / 1000) * po.rate;
+
+                vehicle.status = 'GRN Incomplete';
+                vehicle.grn = formData.get('grnNumber');
+                vehicle.financierInvoiceNumber = formData.get('financierInvoiceNumber');
+                vehicle.podFile = formData.get('podFile').name || 'pod_dummy.pdf'; // Just storing filename
+                vehicle.deductions.shortage = shortageKg;
+                vehicle.deductions.shortageValue = shortageValue;
+                vehicle.deductions.total = shortageValue;
+
+                if (shortageValue > 0) {
+                    const financier = getFinancier(po.financierId);
+                    const lastBalance = state.ledgers[financier.id].length > 0 ? state.ledgers[financier.id].slice(-1)[0].balance : 0;
+                    state.ledgers[financier.id].push({
+                        type: 'credit', date: new Date().toISOString().split('T')[0],
+                        description: `CN for Shortage (GRN: ${vehicle.grn})`, amount: shortageValue, balance: lastBalance - shortageValue
+                    });
+                }
+                closeModal();
+                render();
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+        
+        function showAddPendingDeductionsModal(vehicleId) {
+            const vehicle = state.vehicles.find(v => v.id === vehicleId);
+            const po = getPO(vehicle.poId);
+
+            const form = showModal(`
+                <h2 class="text-lg font-bold mb-4">Add Pending Deductions</h2>
+                <p class="text-sm text-gray-600 mb-4">Vehicle: ${vehicle.vehicleNumber}</p>
+                ${createFormInput('quality', 'Quality Deduction (₹)', 'number', false, vehicle.deductions.quality || '')}
+                ${createFormInput('bardana', 'Bardana Deduction (₹)', 'number', false, vehicle.deductions.bardana || '')}
+                ${createFormButtons()}
+            `);
+
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const quality = parseFloat(formData.get('quality') || vehicle.deductions.quality || 0);
+                const bardana = parseFloat(formData.get('bardana') || vehicle.deductions.bardana || 0);
+                const newDeductions = (quality - (vehicle.deductions.quality || 0)) + (bardana - (vehicle.deductions.bardana || 0));
+
+                vehicle.deductions.quality = quality;
+                vehicle.deductions.bardana = bardana;
+                vehicle.deductions.total = (vehicle.deductions.shortageValue || 0) + quality + bardana;
+                
+                if (vehicle.deductions.quality !== null && vehicle.deductions.bardana !== null) {
+                    vehicle.status = 'Completed';
+                }
+
+                if (newDeductions > 0) {
+                    const financier = getFinancier(po.financierId);
+                    const lastBalance = state.ledgers[financier.id].length > 0 ? state.ledgers[financier.id].slice(-1)[0].balance : 0;
+                    state.ledgers[financier.id].push({
+                        type: 'credit', date: new Date().toISOString().split('T')[0],
+                        description: `CN for Other Deductions (GRN: ${vehicle.grn})`, amount: newDeductions, balance: lastBalance - newDeductions
+                    });
+                }
+                
+                closeModal();
+                render();
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showCancelVehicleModal(vehicleId) {
+            const vehicle = state.vehicles.find(v => v.id === vehicleId);
+            const form = showModal(`
+                <h2 class="text-lg font-bold text-red-600 mb-4">Cancel Vehicle ${vehicle.vehicleNumber}</h2>
+                <p class="text-sm text-gray-600 mb-4">Are you sure? This will reverse the ledger entry. Please provide a reason.</p>
+                <div class="mb-4">
+                    <label for="remarks" class="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
+                    <textarea id="remarks" name="remarks" rows="3" required class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" id="goBackBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md">Back</button>
+                    <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-md">Confirm Cancellation</button>
+                </div>
+            `);
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const po = getPO(vehicle.poId);
+                
+                vehicle.status = 'Cancelled';
+                vehicle.remarks = formData.get('remarks');
+
+                const financier = getFinancier(po.financierId);
+                const lastBalance = state.ledgers[financier.id].slice(-1)[0].balance;
+                const invoiceValue = vehicle.quantity * po.rate;
+                state.ledgers[financier.id].push({
+                    type: 'credit', date: new Date().toISOString().split('T')[0],
+                    description: `Reversal for Cancelled Vehicle ${vehicle.vehicleNumber}`, amount: invoiceValue, balance: lastBalance - invoiceValue
+                });
+
+                po.dispatchedQuantity -= vehicle.quantity;
+                po.status = 'Partially Dispatched';
+
+                closeModal();
+                render();
+            });
+            document.getElementById('goBackBtn').addEventListener('click', () => {
+                closeModal();
+                showRecordDeductionsModal(vehicleId);
+            });
+        }
+
+        function showSquareOffPOModal(poId) {
+            const po = getPO(poId);
+            const form = showModal(`
+                <h2 class="text-lg font-bold text-red-600 mb-4">Square Off Purchase Order?</h2>
+                <p class="text-sm text-gray-600 mb-4">This will close the PO <span class="font-bold">${po.item} (${po.id})</span> and mark it as completed. Any remaining quantity will be cancelled. This action cannot be undone.</p>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" id="closeModalBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md">Cancel</button>
+                    <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-md">Confirm & Close PO</button>
+                </div>
+            `);
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                po.status = 'Completed';
+                closeModal();
+                navigate('pendingPOs');
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showEditGRNDetailsModal(vehicleId) {
+            const vehicle = state.vehicles.find(v => v.id === vehicleId);
+            const po = getPO(vehicle.poId);
+
+            const form = showModal(`
+                <h2 class="text-lg font-bold mb-4">Edit GRN Details for ${vehicle.vehicleNumber}</h2>
+                ${createFormInput('grnNumber', 'GRN/POD Number', 'text', true, vehicle.grn || '')}
+                ${createFormInput('financierInvoiceNumber', 'Financier Invoice Number', 'text', true, vehicle.financierInvoiceNumber || '')}
+                ${createFormInput('shortage', 'Quantity Shortage (Kgs)', 'number', true, vehicle.deductions.shortage || '0')}
+                ${createFormInput('quality', 'Quality Deduction (₹)', 'number', false, vehicle.deductions.quality !== null ? vehicle.deductions.quality : '')}
+                ${createFormInput('bardana', 'Bardana Deduction (₹)', 'number', false, vehicle.deductions.bardana !== null ? vehicle.deductions.bardana : '')}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Current POD File: <span class="font-normal text-gray-500">${vehicle.podFile || 'None'}</span></label>
+                    <label for="podFile" class="block text-sm font-medium text-gray-700 mb-1">Upload New POD File (Optional)</label>
+                    <input type="file" id="podFile" name="podFile" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                </div>
+                ${createFormButtons()}
+            `);
+
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const financier = getFinancier(po.financierId);
+
+                // Store old values for calculating ledger correction
+                const oldTotalDeductions = vehicle.deductions.total || 0;
+                
+                // Get new values from form
+                const newShortageKg = parseFloat(formData.get('shortage') || 0);
+                const newShortageValue = (newShortageKg / 1000) * po.rate;
+                const newQuality = formData.get('quality') !== '' ? parseFloat(formData.get('quality')) : null;
+                const newBardana = formData.get('bardana') !== '' ? parseFloat(formData.get('bardana')) : null;
+                const newTotalDeductions = newShortageValue + (newQuality || 0) + (newBardana || 0);
+                
+                // Update vehicle object
+                vehicle.grn = formData.get('grnNumber');
+                vehicle.financierInvoiceNumber = formData.get('financierInvoiceNumber');
+                if (formData.get('podFile')?.name) {
+                    vehicle.podFile = formData.get('podFile').name;
+                }
+                vehicle.deductions = {
+                    shortage: newShortageKg,
+                    shortageValue: newShortageValue,
+                    quality: newQuality,
+                    bardana: newBardana,
+                    total: newTotalDeductions
+                };
+
+                if (vehicle.deductions.quality !== null && vehicle.deductions.bardana !== null) {
+                    vehicle.status = 'Completed';
+                } else {
+                    vehicle.status = 'GRN Incomplete';
+                }
+
+                // Calculate and apply ledger correction
+                const correctionAmount = newTotalDeductions - oldTotalDeductions;
+                if (correctionAmount !== 0) {
+                    const lastBalance = state.ledgers[financier.id].length > 0 ? state.ledgers[financier.id].slice(-1)[0].balance : 0;
+                    const newBalance = lastBalance - correctionAmount;
+                    state.ledgers[financier.id].push({
+                        type: correctionAmount > 0 ? 'credit' : 'debit',
+                        date: new Date().toISOString().split('T')[0],
+                        description: `Correction for GRN: ${vehicle.grn}`,
+                        amount: Math.abs(correctionAmount),
+                        balance: newBalance
+                    });
+                }
+                
+                closeModal();
+                render();
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showLedgerModal(financierId) {
+            const financier = getFinancier(financierId);
+            const ledger = state.ledgers[financierId] || [];
+            
+            const ledgerRows = ledger.map(entry => `
+                <tr class="border-b">
+                    <td class="py-2 px-1 text-xs">${entry.date}</td>
+                    <td class="py-2 px-1 text-xs">${entry.description}</td>
+                    <td class="py-2 px-1 text-xs text-right">${entry.type === 'debit' ? `₹${entry.amount.toLocaleString('en-IN')}` : '-'}</td>
+                    <td class="py-2 px-1 text-xs text-right">${entry.type === 'credit' ? `₹${entry.amount.toLocaleString('en-IN')}` : '-'}</td>
+                    <td class="py-2 px-1 text-xs text-right font-semibold">₹${entry.balance.toLocaleString('en-IN')}</td>
+                </tr>
+            `).join('');
+
+            const content = `
+                <h2 class="text-lg font-bold mb-1">Ledger for ${financier.businessName}</h2>
+                <p class="text-sm text-gray-500 mb-4">A dummy ledger file can be shared from here.</p>
+                <div class="overflow-x-auto max-h-80">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-100 sticky top-0">
+                                <th class="py-2 px-1 text-xs font-semibold">Date</th>
+                                <th class="py-2 px-1 text-xs font-semibold">Particulars</th>
+                                <th class="py-2 px-1 text-xs font-semibold text-right">Debit</th>
+                                <th class="py-2 px-1 text-xs font-semibold text-right">Credit</th>
+                                <th class="py-2 px-1 text-xs font-semibold text-right">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${ledgerRows.length > 0 ? ledgerRows : '<tr><td colspan="5" class="text-center py-4 text-gray-500">No transactions found.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" id="closeModalBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md">Close</button>
+                    <button type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md">Share Ledger</button>
+                </div>
+            `;
+            showModal(content, false);
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showAddFinancierModal() {
+             const form = showModal(`
+                <h2 class="text-lg font-bold mb-4">Add New Financier</h2>
+                ${createFormInput('businessName', 'Business Name')}
+                ${createFormInput('gst', 'GST Number')}
+                ${createFormInput('mobile', 'Mobile Number', 'tel')}
+                ${createFormInput('billingAddress', 'Billing Address')}
+                ${createFormButtons()}
+            `);
+             form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const newFinancier = { id: `fin${Date.now()}`, ...Object.fromEntries(formData.entries()) };
+                state.financiers.push(newFinancier);
+                closeModal();
+                render();
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        function showAddPlantModal() {
+             const form = showModal(`
+                <h2 class="text-lg font-bold mb-4">Add New Plant</h2>
+                ${createFormInput('name', 'Plant Name')}
+                ${createFormInput('gst', 'GST Number')}
+                ${createFormInput('mobile', 'Mobile Number', 'tel')}
+                ${createFormInput('address', 'Shipping Address')}
+                ${createFormButtons()}
+            `);
+             form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const newPlant = { id: `plant${Date.now()}`, ...Object.fromEntries(formData.entries()) };
+                state.plants.push(newPlant);
+                closeModal();
+                render();
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+        }
+
+        // --- NAVIGATION & INITIALIZATION ---
+        function navigate(page) { state.currentPage = page; render(); }
+        navItems.forEach(item => { item.addEventListener('click', (e) => { 
+            const page = e.currentTarget.getAttribute('data-page'); 
+            // Fix for PO navigation tab name
+            if(page === 'pendingPOs'){
+                const newLabel = 'Purchase Orders';
+                const span = e.currentTarget.querySelector('span');
+                if(span.textContent !== newLabel) span.textContent = newLabel;
+            }
+            window.history.pushState({ page }, '', `#${page}`); 
+            navigate(page); 
+        }); });
+        window.addEventListener('popstate', (e) => { if (e.state && e.state.page) navigate(e.state.page); else if (e.state && e.state.poId) navigate('poDetails'); else navigate('dashboard'); });
+        const initialPage = window.location.hash.substring(1).split('/')[0] || 'dashboard'; window.history.replaceState({ page: initialPage }, '', `#${initialPage}`); navigate(initialPage);
+    });
+    </script>
+</body>
+</html>
